@@ -1,0 +1,22 @@
+rules:
+  - id: 05.xss-detection-spring-solution
+    languages:
+      - java
+    message: "Potential XSS vulnerability detected: unsanitized user input is
+      written to the response."
+    mode: taint
+    severity: WARNING
+    pattern-sources:
+      - pattern: (HttpServletRequest $REQ).getParameter(...)
+    pattern-sanitizers:
+      - pattern: sanitizeInput(...);
+    pattern-sinks:
+      - patterns:
+          - pattern: response.getWriter().write(... + $X + ...)
+          - focus-metavariable: $X
+    metadata:
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation
+        ('Cross-site Scripting')"
+      owasp: "A7: Cross-Site Scripting (XSS)"
+      goal:
+        - Can you edit this rule to match the 2 XSS vulnerabilities in the code?
