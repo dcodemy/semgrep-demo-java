@@ -5,7 +5,7 @@ rules:
     message: "Potential XSS vulnerability detected: unsanitized user input is
       written to the response."
     mode: taint
-    severity: WARNING
+    severity: ERROR
     pattern-sources:
       - pattern: (HttpServletRequest $REQ).getParameter(...)
     pattern-sanitizers:
