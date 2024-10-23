@@ -54,7 +54,7 @@ jobs:
             }
 
             for (const issue of issues) {
-              const title = issue.extra.metadata.title || `High risk Vulnerability Detected`;
+              const title = issue.extra.metadata.cwe + " - " +  issue.extra.fingerprint  || `High risk Vulnerability Detected`;
 
               // Check if the issue already exists
               const existingIssues = await github.rest.issues.listForRepo({
