@@ -39,67 +39,66 @@ jobs:
           fi
 
       - name: Create GitHub Issues for ERROR Findings
-        if: failure()  # Run if the previous step failed
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const fs = require('fs');
-            const results = fs.readFileSync('semgrep-results.json', 'utf8');
-            const issues = JSON.parse(results).results.filter(issue => issue.extra.severity === "ERROR");
+  if: failure()  # Run if the previous step failed
+  uses: actions/github-script@v6
+  with:
+    script: |
+      const fs = require('fs');
+      const results = fs.readFileSync('semgrep-results.json', 'utf8');
+      const issues = JSON.parse(results).results.filter(issue => issue.extra.severity === "ERROR");
 
-            // Check if there are any issues to create
-            if (issues.length === 0) {
-              console.log('No ERROR issues found to create.');
-              return;
-            }
+      // Check if there are any issues to create
+      if (issues.length === 0) {
+        console.log('No ERROR issues found to create.');
+        return;
+      }
 
-            for (const issue of issues) {
-              const title = issue.extra.metadata.cwe + " - " +  issue.extra.fingerprint  || `High risk Vulnerability Detected`;
+      for (const issue of issues) {
+        const title = issue.extra.metadata.cwe + " - " + issue.path + " - " + (issue.extra.metadata.filename || `High risk Vulnerability Detected`);
+        const fingerprintLabel = `fingerprint:${issue.extra.fingerprint}`;
 
-              // Check if the issue already exists
-              const existingIssues = await github.rest.issues.listForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: 'open',
-                labels: ['bug'],
-              });
+        // Check if the issue already exists
+        const existingIssues = await github.rest.issues.listForRepo({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          state: 'open',
+          labels: ['bug', fingerprintLabel],
+        });
 
-              const issueExists = existingIssues.data.some(existingIssue => existingIssue.title === title);
-              if (issueExists) {
-                console.log(`The issue titled "${title}" already exists.`);
-                continue;
-              }
+        if (existingIssues.data.length > 0) {
+          console.log(`The issue with fingerprint "${issue.extra.fingerprint}" already exists.`);
+          continue;
+        }
 
-              const location = `${issue.path}:${issue.start.line}`;
-              const cwe = issue.extra.metadata.cwe ? issue.extra.metadata.cwe[0] : "";
-              const owaspLink = issue.extra.metadata.references ? issue.extra.metadata.references[0] : "https://owasp.org/Top10/";
-              const vulnerableCode = issue.extra.lines.trim();
-              const body = `
-              Semgrep has detected a high risk vulnerability in your code.
+        const location = `${issue.path}:${issue.start.line}`;
+        const cwe = issue.extra.metadata.cwe ? issue.extra.metadata.cwe[0] : "";
+        const owaspLink = issue.extra.metadata.references ? issue.extra.metadata.references[0] : "https://owasp.org/Top10/";
+        const vulnerableCode = issue.extra.lines.trim();
+        const body = `
+        Semgrep has detected a high risk vulnerability in your code.
 
-              **Description**: ${issue.extra.message}
+        **Description**: ${issue.extra.message}
+        **CWE**: ${issue.extra.metadata.cwe}
+        **Location**: ${location}
 
-              **Location**: ${location}
+        **OWASP Link**: [OWASP Top 10](${owaspLink})
 
-              **OWASP Link**: [OWASP Top 10](${owaspLink})
+        **Vulnerable Code**:
 
-              **Vulnerable Code**:
+        \`\`\`java
+        ${vulnerableCode}
+        \`\`\`
+        `;
 
-              \`\`\`java
-              ${vulnerableCode}
-              \`\`\`
-
-              `;
-
-              // Create a new GitHub issue
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: title,
-                body: body,
-                labels: ['bug'],
-              });
-            }
+        // Create a new GitHub issue
+        await github.rest.issues.create({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          title: title,
+          body: body,
+          labels: ['bug', fingerprintLabel],
+        });
+      }
 
       - name: Upload Semgrep Results as Artifact
         if: always()  # Run this step regardless of previous success or failure
