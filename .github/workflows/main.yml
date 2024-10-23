@@ -27,7 +27,7 @@ jobs:
         id: semgrep
         run: |
           # Run Semgrep and capture JSON output
-          semgrep --config ./semgrep/rule.yaml ./Run.java --json > semgrep-results.json
+          semgrep --config=./semgrep/rule.yml ./Run.java --json > semgrep-results.json
           
           # Check if there are any ERROR risk issues
           if jq -e '.results | any(.extra.severity == "ERROR")' semgrep-results.json; then
