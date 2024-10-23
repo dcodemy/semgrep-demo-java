@@ -1,0 +1,109 @@
+name: Semgrep
+
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+  push:
+    branches: ["main"]
+
+jobs:
+  semgrep_scan:
+    name: semgrep/ci
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep
+    if: (github.actor != 'dependabot[bot]')
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+      issues: write  # Needed to create issues
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Perform Semgrep Analysis
+        id: semgrep
+        run: |
+          # Run Semgrep and capture JSON output
+          semgrep --config ./semgrep/rule.yaml ./Run.java --json > semgrep-results.json
+          
+          # Check if there are any ERROR risk issues
+          if jq -e '.results | any(.extra.severity == "ERROR")' semgrep-results.json; then
+            echo "##[error]Semgrep found ERROR risk issues."
+            cat semgrep-results.json
+            exit 1  # Exit with an error if ERROR issues are found
+          else
+            echo "No ERROR risk issues found by Semgrep."
+          fi
+
+      - name: Create GitHub Issues for ERROR Findings
+        if: failure()  # Run if the previous step failed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const results = fs.readFileSync('semgrep-results.json', 'utf8');
+            const issues = JSON.parse(results).results.filter(issue => issue.extra.severity === "ERROR");
+
+            // Check if there are any issues to create
+            if (issues.length === 0) {
+              console.log('No ERROR issues found to create.');
+              return;
+            }
+
+            for (const issue of issues) {
+              const title = issue.extra.metadata.title || `High risk Vulnerability Detected`;
+
+              // Check if the issue already exists
+              const existingIssues = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: ['bug'],
+              });
+
+              const issueExists = existingIssues.data.some(existingIssue => existingIssue.title === title);
+              if (issueExists) {
+                console.log(`The issue titled "${title}" already exists.`);
+                continue;
+              }
+
+              const location = `${issue.path}:${issue.start.line}`;
+              const cwe = issue.extra.metadata.cwe ? issue.extra.metadata.cwe[0] : "";
+              const owaspLink = issue.extra.metadata.references ? issue.extra.metadata.references[0] : "https://owasp.org/Top10/";
+              const vulnerableCode = issue.extra.lines.trim();
+              const body = `
+              Semgrep has detected a high risk vulnerability in your code.
+
+              **Description**: ${issue.extra.message}
+
+              **Location**: ${location}
+
+              **OWASP Link**: [OWASP Top 10](${owaspLink})
+
+              **Vulnerable Code**:
+
+              \`\`\`java
+              ${vulnerableCode}
+              \`\`\`
+
+              `;
+
+              // Create a new GitHub issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['bug'],
+              });
+            }
+
+      - name: Upload Semgrep Results as Artifact
+        if: always()  # Run this step regardless of previous success or failure
+        uses: actions/upload-artifact@v3
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
